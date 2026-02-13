@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Valentine Quest</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin:0; background:#0b0f1a; display:grid; place-items:center; height:100vh; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    .wrap { width:min(960px, 96vw); }
+    canvas { width:100%; image-rendering: pixelated; border-radius:14px; box-shadow: 0 20px 60px rgba(0,0,0,.45); background:#0b0f1a; }
+    .hud { display:flex; gap:10px; justify-content:space-between; align-items:center; margin:10px 2px 0; opacity:.9; font-size:14px; }
+    .kbd { border:1px solid rgba(255,255,255,.18); padding:2px 8px; border-radius:8px; }
+    a { color:#9ddcff; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="c" width="480" height="270"></canvas>
+  <div class="hud">
+    <div>
+      <span class="kbd">A</span><span class="kbd">D</span> / <span class="kbd">←</span><span class="kbd">→</span> move
+      &nbsp; <span class="kbd">Space</span> jump
+      &nbsp; <span class="kbd">E</span> interact
+    </div>
+    <div id="status">Loading love…</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ======== Quick customization ========
+  const GIRLFRIEND_NAME = "Araya";   // <- change
+  const YOUR_NAME = "Bruce";         // <- change
+  const FINAL_LINE = `Happy Valentine's Day, ${GIRLFRIEND_NAME}. I choose you — always.`;
+  const SUB_LINE   = `— ${YOUR_NAME}`;
+  // Optional: Replace the memory lines with your real memories
+  const MEMORIES = [
+    "Memory #1: The moment I realized you felt like home.",
+    "Memory #2: Our inside jokes that still make me grin.",
+    "Memory #3: The future I keep building in my head… with you in it."
+  ];
+
+  // ======== Canvas + scale ========
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+
+  const statusEl = document.getElementById("status");
+
+  // ======== Input ========
+  const keys = new Set();
+  let justPressedE = false;
+  window.addEventListener("keydown", (e) => {
+    if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) e.preventDefault();
+    keys.add(e.key.toLowerCase());
+    if (e.key.toLowerCase() === "e") justPressedE = true;
+  }, { passive:false });
+  window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+  // ======== World (simple tile map) ========
+  // 0 empty, 1 solid block, 2 signpost, 3 heart, 4 gate (finish)
+  // 30x17 tiles => 480x272-ish; we use 16px tiles (480x272). Canvas is 480x270; close enough.
+  const TS = 16; // tile size
+  const W = 30, H = 17;
+
+  // A cute little level layout (hand-made)
+  const map = [
+    "000000000000000000000000000000",
+    "000000000000000000000000000000",
+    "000000000000000000000000000000",
+    "000000000000000000000000003000",
+    "000000000000000000000000011100",
+    "000000000000000200000000000000",
+    "000000000000011110000000000000",
+    "000000000000000000000003000000",
+    "000000000111100000000111100000",
+    "000000000000000000000000000000",
+    "000000030000000000200000000000",
+    "000011110000000001111000000400",
+    "000000000000000000000000001111",
+    "000000000000000000000000000000",
+    "000000000000000000000000000000",
+    "011111111111111111111111111110",
+    "111111111111111111111111111111",
+  ].map(row => row.split("").map(ch => Number(ch)));
+
+  // Dialogue for signposts (tile type 2)
+  const signText = [
+    `Distance is a map, not a wall.`,
+    `Collect the hearts to unlock the gate.`,
+    `Every jump is me choosing you again.`
+  ];
+  let signIndex = 0;
+
+  // Replace hearts (tile type 3) with collectibles list for easier logic
+  const collectibles = [];
+  for (let y=0; y<H; y++){
+    for (let x=0; x<W; x++){
+      if (map[y][x] === 3) {
+        collectibles.push({ x, y, taken:false, id: collectibles.length });
+      }
+    }
+  }
+
+  // Gate tile position
+  let gate = { x: -1, y: -1, open: false };
+  for (let y=0; y<H; y++){
+    for (let x=0; x<W; x++){
+      if (map[y][x] === 4) gate = { x, y, open:false };
+    }
+  }
+
+  // ======== Player ========
+  const player = {
+    x: 2*TS, y: 12*TS, w: 12, h: 14,
+    vx: 0, vy: 0,
+    onGround: false
+  };
+
+  const physics = {
+    grav: 900,      // px/s^2
+    move: 220,      // px/s
+    jump: 360,      // px/s
+    friction: 0.85
+  };
+
+  // ======== Camera ========
+  const cam = { x:0, y:0 };
+
+  // ======== UI / Dialogue bubble ========
+  let bubble = { text:"", t:0, show:false };
+  function showBubble(text, seconds=2.6){
+    bubble.text = text;
+    bubble.t = seconds;
+    bubble.show = true;
+  }
+
+  // ======== Helpers ========
+  function tileAt(px, py){
+    const x = Math.floor(px / TS);
+    const y = Math.floor(py / TS);
+    if (x<0 || y<0 || x>=W || y>=H) return 1; // treat out of bounds as solid
+    return map[y][x];
+  }
+  function isSolid(tile){ return tile === 1; }
+
+  function aabb(ax, ay, aw, ah, bx, by, bw, bh){
+    return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
+  }
+
+  // ======== Rendering: pixel “palette” ========
+  function clear(){
+    // simple gradient-ish background
+    ctx.fillStyle = "#0b0f1a";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    // stars
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    for (let i=0;i<40;i++){
+      const sx = (i*73) % canvas.width;
+      const sy = (i*41) % canvas.height;
+      ctx.fillRect(sx, sy, 1, 1);
+    }
+  }
+
+  function drawTile(x,y,t){
+    const px = x*TS - cam.x;
+    const py = y*TS - cam.y;
+
+    if (t===1){
+      // block
+      ctx.fillStyle = "#1b2a4a";
+      ctx.fillRect(px, py, TS, TS);
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      ctx.fillRect(px+2, py+2, TS-4, TS-4);
+    } else if (t===2){
+      // signpost
+      ctx.fillStyle = "#a98b5a";
+      ctx.fillRect(px+7, py+3, 2, 10);
+      ctx.fillStyle = "#d8c49b";
+      ctx.fillRect(px+4, py+2, 8, 5);
+    } else if (t===4){
+      // gate (locked/open)
+      ctx.fillStyle = gate.open ? "#9de38f" : "#ff9aa9";
+      ctx.fillRect(px+3, py+3, TS-6, TS-6);
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      ctx.fillRect(px+6, py+6, TS-12, TS-12);
+    }
+  }
+
+  function drawHeart(px, py, taken){
+    if (taken) return;
+    // tiny pixel heart (8x7) scaled to fit
+    const hx = px - cam.x + 4;
+    const hy = py - cam.y + 4;
+    ctx.fillStyle = "#ff5c7a";
+    const pixels = [
+      "..xx.xx..",
+      ".xxxxxxx.",
+      "xxxxxxxxx",
+      "xxxxxxxxx",
+      ".xxxxxxx.",
+      "..xxxxx..",
+      "...xxx..."
+    ];
+    for (let y=0; y<pixels.length; y++){
+      for (let x=0; x<pixels[y].length; x++){
+        if (pixels[y][x] === "x") ctx.fillRect(hx + x, hy + y, 1, 1);
+      }
+    }
+  }
+
+  function drawPlayer(){
+    const px = player.x - cam.x;
+    const py = player.y - cam.y;
+
+    // body
+    ctx.fillStyle = "#9ddcff";
+    ctx.fillRect(px, py, player.w, player.h);
+
+    // face highlight
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(px+2, py+3, 3, 3);
+
+    // little scarf vibe
+    ctx.fillStyle = "#ff5c7a";
+    ctx.fillRect(px+1, py+6, player.w-2, 2);
+  }
+
+  function drawBubble(){
+    if (!bubble.show) return;
+    const padding = 8;
+    const maxW = 360;
+
+    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    const lines = wrapText(bubble.text, maxW);
+    const lineH = 16;
+    const boxW = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width))) + padding*2;
+    const boxH = lines.length*lineH + padding*2;
+
+    const bx = 10;
+    const by = 10;
+
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    roundRect(bx, by, boxW, boxH, 10, true, false);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    roundRect(bx, by, boxW, boxH, 10, false, true);
+
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    for (let i=0; i<lines.length; i++){
+      ctx.fillText(lines[i], bx+padding, by+padding + (i+1)*lineH - 4);
+    }
+  }
+
+  function wrapText(text, maxWidth){
+    const words = text.split(" ");
+    const lines = [];
+    let line = "";
+    for (const w of words){
+      const test = line ? (line + " " + w) : w;
+      if (ctx.measureText(test).width > maxWidth && line){
+        lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function roundRect(x, y, w, h, r, fill, stroke){
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+    ctx.arcTo(x, y+h, x, y, r);
+    ctx.arcTo(x, y, x+w, y, r);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
+  }
+
+  // ======== Game state ========
+  let heartsCollected = 0;
+  let finished = false;
+
+  function updateStatus(){
+    statusEl.textContent = finished
+      ? "Reunited 💞"
+      : `Hearts: ${heartsCollected}/${collectibles.length}  •  Find the gate`;
+  }
+
+  // ======== Collision + movement ========
+  function step(dt){
+    if (finished) return;
+
+    // input
+    const left  = keys.has("a") || keys.has("arrowleft");
+    const right = keys.has("d") || keys.has("arrowright");
+    const jump  = keys.has(" ");
+
+    if (left)  player.vx = -physics.move;
+    if (right) player.vx = physics.move;
+    if (!left && !right) player.vx *= physics.friction;
+
+    // jump
+    if (jump && player.onGround){
+      player.vy = -physics.jump;
+      player.onGround = false;
+    }
+
+    // gravity
+    player.vy += physics.grav * dt;
+
+    // move x
+    player.x += player.vx * dt;
+    resolveCollisions("x");
+
+    // move y
+    player.y += player.vy * dt;
+    resolveCollisions("y");
+
+    // camera follow
+    cam.x = Math.max(0, Math.min(player.x - canvas.width/2 + player.w/2, W*TS - canvas.width));
+    cam.y = Math.max(0, Math.min(player.y - canvas.height/2 + player.h/2, H*TS - canvas.height));
+
+    // bubble timer
+    if (bubble.show){
+      bubble.t -= dt;
+      if (bubble.t <= 0) bubble.show = false;
+    }
+
+    // Interactions
+    handlePickups();
+    handleSignposts();
+    handleGate();
+
+    updateStatus();
+    justPressedE = false;
+  }
+
+  function resolveCollisions(axis){
+    // check tiles around player bounds
+    const left = Math.floor(player.x / TS);
+    const right = Math.floor((player.x + player.w) / TS);
+    const top = Math.floor(player.y / TS);
+    const bottom = Math.floor((player.y + player.h) / TS);
+
+    player.onGround = false;
+
+    for (let y = top; y <= bottom; y++){
+      for (let x = left; x <= right; x++){
+        const t = (x<0||y<0||x>=W||y>=H) ? 1 : map[y][x];
+        if (!isSolid(t)) continue;
+
+        const tx = x*TS;
+        const ty = y*TS;
+
+        if (aabb(player.x, player.y, player.w, player.h, tx, ty, TS, TS)){
+          if (axis === "x"){
+            if (player.vx > 0) player.x = tx - player.w - 0.01;
+            else if (player.vx < 0) player.x = tx + TS + 0.01;
+            player.vx = 0;
+          } else {
+            if (player.vy > 0){
+              player.y = ty - player.h - 0.01;
+              player.vy = 0;
+              player.onGround = true;
+            } else if (player.vy < 0){
+              player.y = ty + TS + 0.01;
+              player.vy = 0;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function handlePickups(){
+    for (const h of collectibles){
+      if (h.taken) continue;
+      const px = h.x*TS, py = h.y*TS;
+      if (aabb(player.x, player.y, player.w, player.h, px+3, py+3, TS-6, TS-6)){
+        h.taken = true;
+        heartsCollected++;
+        showBubble(MEMORIES[h.id] ?? "A memory collected.", 3.2);
+
+        if (heartsCollected >= collectibles.length){
+          gate.open = true;
+          showBubble(`The gate opened. Come to me, ${GIRLFRIEND_NAME}.`, 3.0);
+        }
+      }
+    }
+  }
+
+  function handleSignposts(){
+    // if player overlaps a signpost tile and presses E, show line
+    const cx = Math.floor((player.x + player.w/2)/TS);
+    const cy = Math.floor((player.y + player.h/2)/TS);
+
+    // check around a small area
+    for (let y=cy-1; y<=cy+1; y++){
+      for (let x=cx-1; x<=cx+1; x++){
+        if (x<0||y<0||x>=W||y>=H) continue;
+        if (map[y][x] === 2){
+          if (justPressedE){
+            showBubble(signText[signIndex % signText.length], 2.6);
+            signIndex++;
+          }
+        }
+      }
+    }
+  }
+
+  function handleGate(){
+    const gx = gate.x*TS, gy = gate.y*TS;
+    if (!gate.open) return;
+
+    if (aabb(player.x, player.y, player.w, player.h, gx, gy, TS, TS)){
+      finished = true;
+    }
+  }
+
+  function draw(){
+    clear();
+
+    // draw tiles
+    for (let y=0;y<H;y++){
+      for (let x=0;x<W;x++){
+        const t = map[y][x];
+        if (t===0 || t===3) continue; // hearts drawn separately
+        drawTile(x,y,t);
+      }
+    }
+
+    // draw hearts
+    for (const h of collectibles){
+      drawHeart(h.x*TS, h.y*TS, h.taken);
+    }
+
+    drawPlayer();
+    drawBubble();
+
+    if (finished) drawEnding();
+  }
+
+  function drawEnding(){
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = "20px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    const title = "REUNITED";
+    ctx.fillText(title, (canvas.width - ctx.measureText(title).width)/2, 70);
+
+    ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    const lines = wrapText(FINAL_LINE, 360);
+    const baseY = 115;
+    for (let i=0;i<lines.length;i++){
+      const w = ctx.measureText(lines[i]).width;
+      ctx.fillText(lines[i], (canvas.width-w)/2, baseY + i*18);
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    const w2 = ctx.measureText(SUB_LINE).width;
+    ctx.fillText(SUB_LINE, (canvas.width-w2)/2, baseY + lines.length*18 + 26);
+
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    const hint = "Refresh to play again.";
+    ctx.fillText(hint, (canvas.width - ctx.measureText(hint).width)/2, canvas.height-30);
+  }
+
+  // ======== Game loop ========
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(0.033, (now - last) / 1000); // clamp dt
+    last = now;
+    step(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  updateStatus();
+  showBubble(`Hi ${GIRLFRIEND_NAME} 💗 Collect the hearts. Then come to me.`, 3.2);
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
