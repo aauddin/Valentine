@@ -12,7 +12,6 @@
     .hud { display:flex; gap:10px; justify-content:space-between; align-items:center; margin:10px 2px 0; opacity:.92; font-size:14px; flex-wrap:wrap; }
     .kbd { border:1px solid rgba(255,255,255,.18); padding:2px 8px; border-radius:8px; display:inline-block; }
 
-    /* Start overlay (solves music blocking reliably) */
     .overlay {
       position:absolute; inset:0;
       display:grid; place-items:center;
@@ -20,18 +19,17 @@
       border-radius:14px;
     }
     .panel {
-      width:min(520px, 92%);
+      width:min(560px, 92%);
       background: rgba(10,14,26,0.92);
       border:1px solid rgba(255,255,255,.12);
       border-radius:14px;
       padding:18px 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,.35);
       text-align:center;
     }
     .panel h1 { margin:0 0 8px; font-size:18px; letter-spacing:0.5px; }
     .panel p { margin:6px 0; opacity:.9; font-size:14px; line-height:1.35; }
+    .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:10px; }
     .btn {
-      margin-top:12px;
       border:1px solid rgba(255,255,255,.18);
       background: rgba(255,255,255,.08);
       color:white;
@@ -48,17 +46,19 @@
 <div class="wrap">
   <canvas id="c" width="480" height="270"></canvas>
 
-  <!-- Background music -->
+  <!-- Update only if your files are NOT in assets/ -->
   <audio id="bgm" src="assets/music.mp3" loop preload="auto"></audio>
 
-  <!-- Start overlay -->
   <div id="overlay" class="overlay">
     <div class="panel">
       <h1>Valentine Quest 💗</h1>
-      <p>Press <b>Start</b> to enable music and begin.</p>
+      <p>We’re going to force-load sprites + force-start music.</p>
       <p><span class="kbd">A</span><span class="kbd">D</span> / <span class="kbd">←</span><span class="kbd">→</span> move &nbsp; <span class="kbd">Space</span> jump &nbsp; <span class="kbd">↓</span> interact</p>
-      <button id="startBtn" class="btn">Start</button>
-      <div class="small">If music is quiet, turn your device volume up a bit.</div>
+      <div class="row">
+        <button id="startBtn" class="btn">Start Game</button>
+        <button id="musicBtn" class="btn">Start Music</button>
+      </div>
+      <div class="small" id="startNote">If music says “blocked”, tap Start Music again.</div>
     </div>
   </div>
 
@@ -86,7 +86,7 @@
     "Memory #3: The future I keep building in my head… with you in it."
   ];
 
-  // Assets (paths already confirmed working for you)
+  // Assets (you said the URLs work)
   const PRINCESS_PATH = "assets/Princess.png";
   const PRINCE_PATH   = "assets/Prince.png";
 
@@ -98,10 +98,32 @@
   const statusEl = document.getElementById("status");
   const overlay = document.getElementById("overlay");
   const startBtn = document.getElementById("startBtn");
+  const musicBtn = document.getElementById("musicBtn");
+  const startNote = document.getElementById("startNote");
 
-  // ======== Music (must start on explicit click/tap) ========
+  // ======== Audio ========
   const bgm = document.getElementById("bgm");
-  bgm.volume = 0.5;
+  bgm.volume = 0.55;
+
+  async function tryPlayMusic(){
+    try {
+      // Some browsers like a "reset" before play
+      if (bgm.readyState < 2) {
+        // force load
+        bgm.load();
+      }
+      const p = bgm.play();
+      if (p && typeof p.then === "function") await p;
+      return { ok:true, msg:"playing" };
+    } catch (e) {
+      return { ok:false, msg:"blocked/paused" };
+    }
+  }
+
+  musicBtn.addEventListener("click", async () => {
+    const res = await tryPlayMusic();
+    startNote.textContent = res.ok ? "Music is playing ✅" : "Music is blocked/paused ❗ Tap Start Music again (or unmute your device).";
+  });
 
   // ======== Input ========
   const keys = new Set();
@@ -119,7 +141,6 @@
   const TS = 16;
   const W = 30, H = 17;
 
-  // 0 empty, 1 solid, 2 signpost, 3 heart, 4 gate
   const map = [
     "000000000000000000000000000000",
     "000000000000000000000000000000",
@@ -173,7 +194,7 @@
   const physics = { grav: 900, move: 220, jump: 360, friction: 0.85 };
   const cam = { x:0, y:0 };
 
-  // ======== Dialogue bubble ========
+  // ======== Bubble ========
   let bubble = { text:"", t:0, show:false };
   function showBubble(text, seconds=2.6){
     bubble.text = text;
@@ -187,24 +208,24 @@
     return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
   }
 
-  // ======== Sprites (robust load checks) ========
+  // ======== Image loading with explicit flags ========
   function loadImage(src){
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => resolve({ img, ok:true });
       img.onerror = () => resolve({ img, ok:false });
+      // If this ever *is* a CORS issue, this helps:
+      img.crossOrigin = "anonymous";
       img.src = src;
     });
   }
 
-  let princessImg, princeImg;
+  let princessImg=null, princeImg=null;
   let princessOk=false, princeOk=false;
 
-  // We will auto-detect sprite size from the PNG itself
-  let princessW=16, princessH=16;
-  let princeW=16, princeH=16;
+  function dims(img){ return { w: img?.naturalWidth||0, h: img?.naturalHeight||0 }; }
 
-  // ======== Render helpers ========
+  // ======== Rendering ========
   function clear(){
     ctx.fillStyle = "#0b0f1a";
     ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -260,13 +281,11 @@
     }
   }
 
-  // Draw the entire sprite image (no cropping assumptions)
-  function drawSprite(img, ok, w, h, dx, dy, facingLeft=false, bob=0){
-    if (!ok || !img || img.naturalWidth === 0) {
-      ctx.fillStyle = "rgba(255,255,255,0.25)";
-      ctx.fillRect(dx, dy, TS, TS);
-      return;
-    }
+  // Draw image at full size (no crop assumptions) with optional flip
+  function drawImageSprite(img, ok, dx, dy, facingLeft=false, bob=0){
+    if (!ok || !img || img.naturalWidth === 0) return;
+
+    const w = img.naturalWidth, h = img.naturalHeight;
 
     ctx.save();
     if (facingLeft){
@@ -288,46 +307,99 @@
 
     const bob = player.onGround ? (Math.sin(performance.now()/280) * 1.2) : 0;
 
-    // Center sprite over collision box a bit
-    const dx = px - Math.floor((princessW - player.w)/2);
-    const dy = py - Math.floor((princessH - player.h)/2);
-
-    drawSprite(princessImg, princessOk, princessW, princessH, dx, dy, player.facingLeft, bob);
+    // anchor: place sprite bottom aligned with collision box bottom
+    if (princessOk && princessImg){
+      const w = princessImg.naturalWidth, h = princessImg.naturalHeight;
+      const dx = px - Math.floor((w - player.w)/2);
+      const dy = (py + player.h) - h; // bottom align
+      drawImageSprite(princessImg, true, dx, dy, player.facingLeft, bob);
+    }
   }
 
   function drawPrinceAtGate(){
-    if (gate.x < 0) return;
-
+    if (!princeOk || !princeImg || gate.x < 0) return;
     const gx = gate.x*TS - cam.x;
     const gy = gate.y*TS - cam.y;
 
-    const spotX = Math.floor(gx - princeW - 2);
-    const spotY = Math.floor(gy - (princeH - TS));
+    const w = princeImg.naturalWidth, h = princeImg.naturalHeight;
+
+    // put prince left of gate, bottom aligned to ground tile
+    const dx = Math.floor(gx - w - 4);
+    const dy = Math.floor((gy + TS) - h);
+
+    const playerScreenX = player.x - cam.x;
+    const faceLeft = dx > playerScreenX;
 
     const bob = Math.sin(performance.now()/320) * 0.8;
-
-    // Face toward player: if prince is right of player, face left, else right
-    const princeScreenX = spotX;
-    const playerScreenX = (player.x - cam.x);
-    const faceLeft = princeScreenX > playerScreenX;
-
-    drawSprite(princeImg, princeOk, princeW, princeH, spotX, spotY, faceLeft, bob);
+    drawImageSprite(princeImg, true, dx, dy, faceLeft, bob);
   }
 
-  function wrapText(text, maxWidth){
-    const words = text.split(" ");
+  function drawDebugPreview(){
+    // Always draw previews in top-right so you KNOW if they’re loading
+    const pad = 6;
+    let x = canvas.width - pad;
+
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(canvas.width - 150, 0, 150, 80);
+
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "10px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.fillText("DEBUG PREVIEW", canvas.width - 145, 12);
+
+    if (princessOk && princessImg && princessImg.naturalWidth){
+      const w = princessImg.naturalWidth, h = princessImg.naturalHeight;
+      x -= w;
+      ctx.drawImage(princessImg, 0,0,w,h, x, 18, w, h);
+      ctx.fillText(`P ${w}x${h}`, x, 18 + h + 10);
+      x -= pad;
+    } else {
+      ctx.fillText("Princess not loaded", canvas.width - 145, 28);
+    }
+
+    if (princeOk && princeImg && princeImg.naturalWidth){
+      const w = princeImg.naturalWidth, h = princeImg.naturalHeight;
+      const px = canvas.width - 145;
+      ctx.drawImage(princeImg, 0,0,w,h, px, 44, Math.min(w, 32), Math.min(h, 32));
+      ctx.fillText(`R ${w}x${h}`, px + 38, 62);
+    } else {
+      ctx.fillText("Prince not loaded", canvas.width - 145, 44);
+    }
+  }
+
+  function drawBubble(){
+    if (!bubble.show) return;
+
+    const padding = 8;
+    const maxW = 360;
+
+    const words = bubble.text.split(" ");
     const lines = [];
     let line = "";
     ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
     for (const w of words){
       const test = line ? (line + " " + w) : w;
-      if (ctx.measureText(test).width > maxWidth && line){
-        lines.push(line);
-        line = w;
+      if (ctx.measureText(test).width > maxW && line){
+        lines.push(line); line = w;
       } else line = test;
     }
     if (line) lines.push(line);
-    return lines;
+
+    const lineH = 16;
+    const boxW = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width))) + padding*2;
+    const boxH = lines.length*lineH + padding*2;
+
+    const bx = 10, by = 10;
+
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    roundRect(bx, by, boxW, boxH, 10, true, false);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    roundRect(bx, by, boxW, boxH, 10, false, true);
+
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    for (let i=0; i<lines.length; i++){
+      ctx.fillText(lines[i], bx+padding, by+padding + (i+1)*lineH - 4);
+    }
   }
 
   function roundRect(x, y, w, h, r, fill, stroke){
@@ -342,42 +414,16 @@
     if (stroke) ctx.stroke();
   }
 
-  function drawBubble(){
-    if (!bubble.show) return;
-
-    const padding = 8;
-    const maxW = 360;
-    const lines = wrapText(bubble.text, maxW);
-    const lineH = 16;
-    const boxW = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width))) + padding*2;
-    const boxH = lines.length*lineH + padding*2;
-
-    const bx = 10, by = 10;
-
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    roundRect(bx, by, boxW, boxH, 10, true, false);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    roundRect(bx, by, boxW, boxH, 10, false, true);
-
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-    for (let i=0; i<lines.length; i++){
-      ctx.fillText(lines[i], bx+padding, by+padding + (i+1)*lineH - 4);
-    }
-  }
-
   // ======== Game state ========
   let heartsCollected = 0;
   let finished = false;
   let started = false;
 
-  function updateStatus(extra=""){
-    const imgStatus = `P:${princessOk ? "ok" : "no"} ${princessW}x${princessH} • R:${princeOk ? "ok" : "no"} ${princeW}x${princeH}`;
-    const audStatus = `Audio:${(!started ? "off" : (bgm.paused ? "paused" : "playing"))}`;
-    statusEl.textContent = finished
-      ? "Reunited 💞"
-      : `Hearts ${heartsCollected}/${collectibles.length} • ${audStatus} • ${imgStatus}${extra ? " • "+extra : ""}`;
+  function updateHud(){
+    const p = princessImg ? `${princessImg.naturalWidth||0}x${princessImg.naturalHeight||0}` : "0x0";
+    const r = princeImg ? `${princeImg.naturalWidth||0}x${princeImg.naturalHeight||0}` : "0x0";
+    const aud = (!started ? "off" : (bgm.paused ? "paused" : "playing"));
+    statusEl.textContent = `Hearts ${heartsCollected}/${collectibles.length} • Audio:${aud} • P:${princessOk?"ok":"no"} ${p} • R:${princeOk?"ok":"no"} ${r}`;
   }
 
   function resolveCollisions(axis){
@@ -456,36 +502,6 @@
     }
   }
 
-  function drawEnding(){
-    ctx.fillStyle = "rgba(0,0,0,0.65)";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = "20px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-    const title = "REUNITED";
-    ctx.fillText(title, (canvas.width - ctx.measureText(title).width)/2, 62);
-
-    // sprites
-    const midX = canvas.width/2;
-    const y = 76;
-    const gap = 12;
-
-    if (princessOk) ctx.drawImage(princessImg, 0,0, princessW, princessH, Math.floor(midX - gap - princessW), y, princessW, princessH);
-    if (princeOk)   ctx.drawImage(princeImg,   0,0, princeW,   princeH,   Math.floor(midX + gap), y, princeW, princeH);
-
-    ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-    const lines = wrapText(FINAL_LINE, 360);
-    const baseY = 140;
-    for (let i=0;i<lines.length;i++){
-      const w = ctx.measureText(lines[i]).width;
-      ctx.fillText(lines[i], (canvas.width-w)/2, baseY + i*18);
-    }
-
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    const w2 = ctx.measureText(SUB_LINE).width;
-    ctx.fillText(SUB_LINE, (canvas.width-w2)/2, baseY + lines.length*18 + 26);
-  }
-
   function step(dt){
     if (!started || finished) return;
 
@@ -504,11 +520,8 @@
 
     player.vy += physics.grav * dt;
 
-    player.x += player.vx * dt;
-    resolveCollisions("x");
-
-    player.y += player.vy * dt;
-    resolveCollisions("y");
+    player.x += player.vx * dt; resolveCollisions("x");
+    player.y += player.vy * dt; resolveCollisions("y");
 
     cam.x = Math.max(0, Math.min(player.x - canvas.width/2 + player.w/2, W*TS - canvas.width));
     cam.y = Math.max(0, Math.min(player.y - canvas.height/2 + player.h/2, H*TS - canvas.height));
@@ -522,7 +535,7 @@
     handleSignposts();
     handleGate();
 
-    updateStatus();
+    updateHud();
     justPressedInteract = false;
   }
 
@@ -539,15 +552,12 @@
 
     for (const h of collectibles) drawHeart(h.x*TS, h.y*TS, h.taken);
 
-    // Prince waiting near the gate
     drawPrinceAtGate();
-
-    // Player
     drawPlayer();
-
     drawBubble();
 
-    if (finished) drawEnding();
+    // ALWAYS show debug previews (top-right)
+    drawDebugPreview();
   }
 
   let last = performance.now();
@@ -559,38 +569,28 @@
     requestAnimationFrame(loop);
   }
 
-  // ======== Start button: loads sprites + starts music + begins game ========
+  // ======== Start button: force-load images, then start music, then start game ========
   startBtn.addEventListener("click", async () => {
-    // Load images explicitly so we KNOW their dimensions
     const p1 = await loadImage(PRINCESS_PATH);
     princessImg = p1.img; princessOk = p1.ok;
-    princessW = princessImg.naturalWidth || 16;
-    princessH = princessImg.naturalHeight || 16;
 
     const p2 = await loadImage(PRINCE_PATH);
     princeImg = p2.img; princeOk = p2.ok;
-    princeW = princeImg.naturalWidth || 16;
-    princeH = princeImg.naturalHeight || 16;
 
-    // Start audio (this click is a guaranteed user gesture)
-    try {
-      bgm.currentTime = 0;
-      await bgm.play();
-    } catch (e) {
-      // If it fails, we still start the game, but show it in the HUD
-      updateStatus("Audio blocked");
-    }
+    // If image load failed, we show it clearly in HUD
+    updateHud();
+
+    // Start music (this click is user gesture)
+    const res = await tryPlayMusic();
+    startNote.textContent = res.ok ? "Music is playing ✅" : "Music is blocked/paused ❗ Tap Start Music again (or unmute device).";
 
     started = true;
     overlay.style.display = "none";
-    showBubble(`Hi ${GIRLFRIEND_NAME} 💗 Collect the hearts. Then come to me.`, 3.2);
-    updateStatus();
+    showBubble(`Hi ${GIRLFRIEND_NAME} 💗 Collect the hearts. Then come to me.`, 3.0);
   });
 
-  // Kick off render loop (draws even before start)
-  updateStatus("Press Start");
+  updateHud();
   requestAnimationFrame(loop);
-
 })();
 </script>
 </body>
