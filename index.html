@@ -79,7 +79,7 @@ button {
 </div>
 
 <div class="hud">
-  <div>A/D or ←/→ move • Space jump</div>
+  <div>A/D or ←/→ move • Space jump • ↓ interact</div>
   <div id="status">Loading...</div>
 </div>
 
@@ -112,7 +112,7 @@ prince.onload = () => princeLoaded=true;
 startBtn.addEventListener("click", async ()=>{
   overlay.style.display="none";
   try{
-    bgm.volume=.6;
+    bgm.volume=0.3;   // 🔊 30% volume
     await bgm.play();
   }catch{}
 });
@@ -127,12 +127,12 @@ const map=[
 "000000000000000000000000000000",
 "000000000000000000000000003000",
 "000000000000000000000000011100",
-"000000000000000000000000000000",
+"000000000000000200000000000000",
 "000000000000011110000000000000",
 "000000000000000000000003000000",
 "000000000111100000000111100000",
 "000000000000000000000000000000",
-"000000030000000000000000000000",
+"000000030000000000200000000000",
 "000011110000000001111000000400",
 "000000000000000000000000001111",
 "000000000000000000000000000000",
@@ -142,10 +142,14 @@ const map=[
 ].map(r=>r.split("").map(Number));
 
 let hearts=[];
-for(let y=0;y<H;y++)
-  for(let x=0;x<W;x++)
-    if(map[y][x]===3)
-      hearts.push({x,y,taken:false});
+let signs=[];
+
+for(let y=0;y<H;y++){
+  for(let x=0;x<W;x++){
+    if(map[y][x]===3) hearts.push({x,y,taken:false});
+    if(map[y][x]===2) signs.push({x,y});
+  }
+}
 
 let gate={x:0,y:0,open:false};
 for(let y=0;y<H;y++)
@@ -156,7 +160,7 @@ for(let y=0;y<H;y++)
 const player={
   x:64,
   y:80,
-  w:12,
+  w:14,
   h:14,
   vx:0,
   vy:0,
@@ -164,12 +168,13 @@ const player={
 };
 
 const physics={grav:900,move:220,jump:360,friction:.85};
-
 const keys=new Set();
+let interact=false;
 
 window.addEventListener("keydown",e=>{
-  if(["ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+  if(["ArrowLeft","ArrowRight","ArrowDown"," "].includes(e.key)) e.preventDefault();
   keys.add(e.key);
+  if(e.key==="ArrowDown") interact=true;
 });
 window.addEventListener("keyup",e=>keys.delete(e.key));
 
@@ -191,7 +196,9 @@ function resolve(axis){
     for(let x=left;x<=right;x++){
       const t=(x<0||y<0||x>=W||y>=H)?1:map[y][x];
       if(!isSolid(t)) continue;
+
       const tx=x*TS,ty=y*TS;
+
       if(aabb(player.x,player.y,player.w,player.h,tx,ty,TS,TS)){
         if(axis==="x"){
           if(player.vx>0) player.x=tx-player.w;
@@ -249,7 +256,29 @@ function update(dt){
       finished=true;
   }
 
+  interact=false;
   statusEl.textContent=`Hearts ${hearts.filter(h=>h.taken).length}/3`;
+}
+
+function drawHeart(x,y){
+  const px=x*TS+4;
+  const py=y*TS+4;
+  ctx.fillStyle="#ff5c7a";
+  const heart=[
+    "..xx.xx..",
+    ".xxxxxxx.",
+    "xxxxxxxxx",
+    "xxxxxxxxx",
+    ".xxxxxxx.",
+    "..xxxxx..",
+    "...xxx..."
+  ];
+  for(let j=0;j<heart.length;j++){
+    for(let i=0;i<heart[j].length;i++){
+      if(heart[j][i]==="x")
+        ctx.fillRect(px+i,py+j,1,1);
+    }
+  }
 }
 
 function draw(){
@@ -262,6 +291,10 @@ function draw(){
         ctx.fillStyle="#1b2a4a";
         ctx.fillRect(x*TS,y*TS,TS,TS);
       }
+      if(map[y][x]===2){
+        ctx.fillStyle="#d8c49b";
+        ctx.fillRect(x*TS+4,y*TS+2,8,6);
+      }
       if(map[y][x]===4){
         ctx.fillStyle=gate.open?"#9de38f":"#ff9aa9";
         ctx.fillRect(x*TS+3,y*TS+3,TS-6,TS-6);
@@ -269,11 +302,8 @@ function draw(){
     }
   }
 
-  for(const h of hearts){
-    if(h.taken) continue;
-    ctx.fillStyle="#ff5c7a";
-    ctx.fillRect(h.x*TS+6,h.y*TS+6,4,4);
-  }
+  for(const h of hearts)
+    if(!h.taken) drawHeart(h.x,h.y);
 
   if(princeLoaded){
     ctx.drawImage(
@@ -286,8 +316,8 @@ function draw(){
   if(princessLoaded){
     ctx.drawImage(
       princess,
-      player.x - (princess.naturalWidth-player.w)/2,
-      player.y + player.h - princess.naturalHeight
+      player.x,
+      player.y - (princess.naturalHeight - player.h)
     );
   }
 
