@@ -36,12 +36,12 @@
   // ======== Quick customization ========
   const GIRLFRIEND_NAME = "Araya";
   const YOUR_NAME = "Bruce";
-  const FINAL_LINE = `Happy Valentine's Day, ${GIRLFRIEND_NAME}. I choose you — always.`;
+  const FINAL_LINE = `Happy Valentine's Day, ${GIRLFRIEND_NAME}. Will you be Valentine? 💕`;
   const SUB_LINE   = `— ${YOUR_NAME}`;
   const MEMORIES = [
-    "Memory #1: The moment I realized you felt like home.",
-    "Memory #2: Our inside jokes that still make me grin.",
-    "Memory #3: The future I keep building in my head… with you in it."
+    "Memory #1: When we painted on our first ever date, that's when I knew...",
+    "Memory #2: When we showed eachothers childhood pictures, that's when I knew...",
+    "Memory #3: When you wrote me that letter, that's when I knew..."
   ];
 
   // ======== Canvas + scale ========
@@ -97,9 +97,9 @@
   ].map(row => row.split("").map(ch => Number(ch)));
 
   const signText = [
-    `Distance is a map, not a wall.`,
-    `Collect the hearts to unlock the door.`,
-    `Every jump is me choosing you again.`
+    `My heart flutters when I see you...`,
+    `I smile like an idiot, when I see you...`,
+    `I'm the luckiest man in the whole world...`
   ];
   let signIndex = 0;
 
@@ -306,7 +306,7 @@
 
   function updateStatus(){
     statusEl.textContent = finished
-      ? "Reunited 💞"
+      ? "Reunited Now and Forever 💞"
       : `Hearts: ${heartsCollected}/${collectibles.length}  •  Find the door`;
   }
 
@@ -491,7 +491,7 @@
   }
 
   updateStatus();
-  showBubble(`Hi ${GIRLFRIEND_NAME} 💗 Collect the hearts. Then come to me.`, 3.2);
+  showBubble(`Hi ${GIRLFRIEND_NAME} 💗 Help, I miss you so much! Collect the hearts. Then Open my Door to My Heart.`, 3.2);
   requestAnimationFrame(loop);
 
 })();
