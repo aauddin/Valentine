@@ -6,7 +6,7 @@
 <title>Valentine Quest</title>
 
 <style>
-body {
+body{
   margin:0;
   background:#0b0f1a;
   display:grid;
@@ -14,50 +14,43 @@ body {
   height:100vh;
   font-family:system-ui;
 }
-
-.wrap {
-  width:min(960px,96vw);
+.wrap{
+  width:min(900px,95vw);
   position:relative;
 }
-
-canvas {
+canvas{
   width:100%;
   background:#0b0f1a;
   image-rendering:pixelated;
-  border-radius:14px;
-  box-shadow:0 20px 60px rgba(0,0,0,.5);
+  border-radius:12px;
 }
-
-.overlay {
+.overlay{
   position:absolute;
   inset:0;
   background:rgba(0,0,0,.7);
   display:grid;
   place-items:center;
-  border-radius:14px;
+  border-radius:12px;
 }
-
-.panel {
-  background:#101428;
+.panel{
+  background:#11152b;
   padding:20px;
-  border-radius:14px;
+  border-radius:12px;
   text-align:center;
 }
-
-button {
+button{
   padding:10px 16px;
   border:none;
-  border-radius:10px;
-  background:#2c3566;
+  border-radius:8px;
+  background:#2e3a77;
   color:white;
-  cursor:pointer;
   font-weight:bold;
+  cursor:pointer;
 }
-
-.hud {
-  margin-top:8px;
-  font-size:13px;
+.hud{
   color:white;
+  font-size:13px;
+  margin-top:6px;
   display:flex;
   justify-content:space-between;
 }
@@ -79,8 +72,8 @@ button {
 </div>
 
 <div class="hud">
-  <div>A/D or ←/→ move • Space jump • ↓ interact</div>
-  <div id="status">Loading...</div>
+  <div>A/D or ←/→ move • Space jump</div>
+  <div id="status"></div>
 </div>
 
 </div>
@@ -97,32 +90,19 @@ const overlay = document.getElementById("overlay");
 const startBtn = document.getElementById("startBtn");
 const statusEl = document.getElementById("status");
 
-const princess = new Image();
-const prince = new Image();
-
-princess.src = "/Princess.png";
-prince.src = "/Prince.png";
-
-let princessLoaded=false;
-let princeLoaded=false;
-
-princess.onload = () => princessLoaded=true;
-prince.onload = () => princeLoaded=true;
-
-startBtn.addEventListener("click", async ()=>{
+startBtn.onclick = async () => {
   overlay.style.display="none";
   try{
-    bgm.volume=0.3;   // 🔊 30% volume
+    bgm.volume = 0.3;
     await bgm.play();
   }catch{}
-});
+};
 
-const TS=16;
-const W=30;
-const H=17;
+const TS = 16;
+const W = 30;
+const H = 17;
 
 const map=[
-"000000000000000000000000000000",
 "000000000000000000000000000000",
 "000000000000000000000000000000",
 "000000000000000000000000003000",
@@ -142,25 +122,21 @@ const map=[
 ].map(r=>r.split("").map(Number));
 
 let hearts=[];
-let signs=[];
-
-for(let y=0;y<H;y++){
-  for(let x=0;x<W;x++){
-    if(map[y][x]===3) hearts.push({x,y,taken:false});
-    if(map[y][x]===2) signs.push({x,y});
-  }
-}
+for(let y=0;y<H;y++)
+ for(let x=0;x<W;x++)
+  if(map[y][x]===3)
+    hearts.push({x,y,taken:false});
 
 let gate={x:0,y:0,open:false};
 for(let y=0;y<H;y++)
-  for(let x=0;x<W;x++)
-    if(map[y][x]===4)
-      gate={x,y,open:false};
+ for(let x=0;x<W;x++)
+  if(map[y][x]===4)
+    gate={x,y,open:false};
 
 const player={
-  x:64,
-  y:80,
-  w:14,
+  x:60,
+  y:60,
+  w:12,
   h:14,
   vx:0,
   vy:0,
@@ -169,12 +145,10 @@ const player={
 
 const physics={grav:900,move:220,jump:360,friction:.85};
 const keys=new Set();
-let interact=false;
 
 window.addEventListener("keydown",e=>{
-  if(["ArrowLeft","ArrowRight","ArrowDown"," "].includes(e.key)) e.preventDefault();
+  if(["ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
   keys.add(e.key);
-  if(e.key==="ArrowDown") interact=true;
 });
 window.addEventListener("keyup",e=>keys.delete(e.key));
 
@@ -185,160 +159,153 @@ function aabb(a,b,c,d,e,f,g,h){
 }
 
 function resolve(axis){
-  const left=Math.floor(player.x/TS);
-  const right=Math.floor((player.x+player.w)/TS);
-  const top=Math.floor(player.y/TS);
-  const bottom=Math.floor((player.y+player.h)/TS);
+ const left=Math.floor(player.x/TS);
+ const right=Math.floor((player.x+player.w)/TS);
+ const top=Math.floor(player.y/TS);
+ const bottom=Math.floor((player.y+player.h)/TS);
 
-  if(axis==="y") player.onGround=false;
+ if(axis==="y") player.onGround=false;
 
-  for(let y=top;y<=bottom;y++){
-    for(let x=left;x<=right;x++){
-      const t=(x<0||y<0||x>=W||y>=H)?1:map[y][x];
-      if(!isSolid(t)) continue;
-
-      const tx=x*TS,ty=y*TS;
-
-      if(aabb(player.x,player.y,player.w,player.h,tx,ty,TS,TS)){
-        if(axis==="x"){
-          if(player.vx>0) player.x=tx-player.w;
-          else if(player.vx<0) player.x=tx+TS;
-          player.vx=0;
-        }else{
-          if(player.vy>0){
-            player.y=ty-player.h;
-            player.vy=0;
-            player.onGround=true;
-          }else if(player.vy<0){
-            player.y=ty+TS;
-            player.vy=0;
-          }
-        }
+ for(let y=top;y<=bottom;y++){
+  for(let x=left;x<=right;x++){
+   const t=(x<0||y<0||x>=W||y>=H)?1:map[y][x];
+   if(!isSolid(t)) continue;
+   const tx=x*TS,ty=y*TS;
+   if(aabb(player.x,player.y,player.w,player.h,tx,ty,TS,TS)){
+    if(axis==="x"){
+      if(player.vx>0) player.x=tx-player.w;
+      else if(player.vx<0) player.x=tx+TS;
+      player.vx=0;
+    }else{
+      if(player.vy>0){
+        player.y=ty-player.h;
+        player.vy=0;
+        player.onGround=true;
+      }else if(player.vy<0){
+        player.y=ty+TS;
+        player.vy=0;
       }
     }
+   }
   }
+ }
 }
 
 let finished=false;
 
 function update(dt){
 
-  const left=keys.has("a")||keys.has("ArrowLeft");
-  const right=keys.has("d")||keys.has("ArrowRight");
-  const jump=keys.has(" ");
+ const left=keys.has("a")||keys.has("ArrowLeft");
+ const right=keys.has("d")||keys.has("ArrowRight");
+ const jump=keys.has(" ");
 
-  if(left) player.vx=-physics.move;
-  if(right) player.vx=physics.move;
-  if(!left&&!right) player.vx*=physics.friction;
+ if(left) player.vx=-physics.move;
+ if(right) player.vx=physics.move;
+ if(!left&&!right) player.vx*=physics.friction;
 
-  if(jump&&player.onGround){
-    player.vy=-physics.jump;
-    player.onGround=false;
+ if(jump&&player.onGround){
+  player.vy=-physics.jump;
+  player.onGround=false;
+ }
+
+ player.vy+=physics.grav*dt;
+
+ player.x+=player.vx*dt; resolve("x");
+ player.y+=player.vy*dt; resolve("y");
+
+ for(const h of hearts){
+  if(h.taken) continue;
+  const px=h.x*TS,py=h.y*TS;
+  if(aabb(player.x,player.y,player.w,player.h,px+3,py+3,TS-6,TS-6)){
+    h.taken=true;
+    if(hearts.every(h=>h.taken)) gate.open=true;
   }
+ }
 
-  player.vy+=physics.grav*dt;
+ if(gate.open){
+  const gx=gate.x*TS,gy=gate.y*TS;
+  if(aabb(player.x,player.y,player.w,player.h,gx,gy,TS,TS))
+    finished=true;
+ }
 
-  player.x+=player.vx*dt; resolve("x");
-  player.y+=player.vy*dt; resolve("y");
+ statusEl.textContent=`Hearts ${hearts.filter(h=>h.taken).length}/3`;
+}
 
-  for(const h of hearts){
-    if(h.taken) continue;
-    const px=h.x*TS,py=h.y*TS;
-    if(aabb(player.x,player.y,player.w,player.h,px+3,py+3,TS-6,TS-6)){
-      h.taken=true;
-      if(hearts.every(h=>h.taken)) gate.open=true;
-    }
-  }
+function drawPrincess(x,y){
+ ctx.fillStyle="#ff8ad6"; // dress
+ ctx.fillRect(x,y,12,14);
+ ctx.fillStyle="#ffe0bd"; // face
+ ctx.fillRect(x+3,y-6,6,6);
+}
 
-  if(gate.open){
-    const gx=gate.x*TS,gy=gate.y*TS;
-    if(aabb(player.x,player.y,player.w,player.h,gx,gy,TS,TS))
-      finished=true;
-  }
-
-  interact=false;
-  statusEl.textContent=`Hearts ${hearts.filter(h=>h.taken).length}/3`;
+function drawPrince(x,y){
+ ctx.fillStyle="#4da6ff"; // outfit
+ ctx.fillRect(x,y,12,14);
+ ctx.fillStyle="#ffe0bd";
+ ctx.fillRect(x+3,y-6,6,6);
 }
 
 function drawHeart(x,y){
-  const px=x*TS+4;
-  const py=y*TS+4;
-  ctx.fillStyle="#ff5c7a";
-  const heart=[
-    "..xx.xx..",
-    ".xxxxxxx.",
-    "xxxxxxxxx",
-    "xxxxxxxxx",
-    ".xxxxxxx.",
-    "..xxxxx..",
-    "...xxx..."
-  ];
-  for(let j=0;j<heart.length;j++){
-    for(let i=0;i<heart[j].length;i++){
-      if(heart[j][i]==="x")
-        ctx.fillRect(px+i,py+j,1,1);
-    }
+ const px=x*TS+4;
+ const py=y*TS+4;
+ ctx.fillStyle="#ff5c7a";
+ const heart=[
+  "..xx.xx..",
+  ".xxxxxxx.",
+  "xxxxxxxxx",
+  "xxxxxxxxx",
+  ".xxxxxxx.",
+  "..xxxxx..",
+  "...xxx..."
+ ];
+ for(let j=0;j<heart.length;j++){
+  for(let i=0;i<heart[j].length;i++){
+   if(heart[j][i]==="x")
+    ctx.fillRect(px+i,py+j,1,1);
   }
+ }
 }
 
 function draw(){
-  ctx.fillStyle="#0b0f1a";
+ ctx.fillStyle="#0b0f1a";
+ ctx.fillRect(0,0,480,270);
+
+ for(let y=0;y<H;y++){
+  for(let x=0;x<W;x++){
+   if(map[y][x]===1){
+    ctx.fillStyle="#1b2a4a";
+    ctx.fillRect(x*TS,y*TS,TS,TS);
+   }
+   if(map[y][x]===4){
+    ctx.fillStyle=gate.open?"#9de38f":"#ff9aa9";
+    ctx.fillRect(x*TS+3,y*TS+3,TS-6,TS-6);
+   }
+  }
+ }
+
+ for(const h of hearts)
+  if(!h.taken) drawHeart(h.x,h.y);
+
+ drawPrince(gate.x*TS-20,gate.y*TS+TS-14);
+ drawPrincess(player.x,player.y);
+
+ if(finished){
+  ctx.fillStyle="rgba(0,0,0,.7)";
   ctx.fillRect(0,0,480,270);
-
-  for(let y=0;y<H;y++){
-    for(let x=0;x<W;x++){
-      if(map[y][x]===1){
-        ctx.fillStyle="#1b2a4a";
-        ctx.fillRect(x*TS,y*TS,TS,TS);
-      }
-      if(map[y][x]===2){
-        ctx.fillStyle="#d8c49b";
-        ctx.fillRect(x*TS+4,y*TS+2,8,6);
-      }
-      if(map[y][x]===4){
-        ctx.fillStyle=gate.open?"#9de38f":"#ff9aa9";
-        ctx.fillRect(x*TS+3,y*TS+3,TS-6,TS-6);
-      }
-    }
-  }
-
-  for(const h of hearts)
-    if(!h.taken) drawHeart(h.x,h.y);
-
-  if(princeLoaded){
-    ctx.drawImage(
-      prince,
-      gate.x*TS - prince.naturalWidth - 4,
-      gate.y*TS + TS - prince.naturalHeight
-    );
-  }
-
-  if(princessLoaded){
-    ctx.drawImage(
-      princess,
-      player.x,
-      player.y - (princess.naturalHeight - player.h)
-    );
-  }
-
-  if(finished){
-    ctx.fillStyle="rgba(0,0,0,.7)";
-    ctx.fillRect(0,0,480,270);
-    ctx.fillStyle="white";
-    ctx.font="18px system-ui";
-    ctx.fillText("REUNITED 💞",150,120);
-  }
+  ctx.fillStyle="white";
+  ctx.font="18px system-ui";
+  ctx.fillText("REUNITED 💞",150,120);
+ }
 }
 
 let last=performance.now();
 function loop(now){
-  const dt=Math.min(.033,(now-last)/1000);
-  last=now;
-  update(dt);
-  draw();
-  requestAnimationFrame(loop);
+ const dt=Math.min(.033,(now-last)/1000);
+ last=now;
+ update(dt);
+ draw();
+ requestAnimationFrame(loop);
 }
-
 loop();
 
 })();
