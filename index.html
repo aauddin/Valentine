@@ -1,339 +1,318 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Valentine Quest</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valentine Quest</title>
 
-  <style>
-    body {
-      margin:0;
-      background:#0b0f1a;
-      display:grid;
-      place-items:center;
-      height:100vh;
-      font-family:system-ui;
-    }
+<style>
+body {
+  margin:0;
+  background:#0b0f1a;
+  display:grid;
+  place-items:center;
+  height:100vh;
+  font-family:system-ui;
+}
 
-    .wrap {
-      width:min(960px, 96vw);
-      position:relative;
-    }
+.wrap {
+  width:min(960px,96vw);
+  position:relative;
+}
 
-    canvas {
-      width:100%;
-      image-rendering:pixelated;
-      background:#0b0f1a;
-      border-radius:14px;
-      box-shadow:0 20px 60px rgba(0,0,0,.5);
-      display:block;
-    }
+canvas {
+  width:100%;
+  background:#0b0f1a;
+  image-rendering:pixelated;
+  border-radius:14px;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);
+}
 
-    .overlay {
-      position:absolute;
-      inset:0;
-      display:grid;
-      place-items:center;
-      background:rgba(0,0,0,.7);
-      border-radius:14px;
-    }
+.overlay {
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,.7);
+  display:grid;
+  place-items:center;
+  border-radius:14px;
+}
 
-    .panel {
-      background:#101428;
-      padding:20px;
-      border-radius:14px;
-      text-align:center;
-      border:1px solid rgba(255,255,255,.1);
-    }
+.panel {
+  background:#101428;
+  padding:20px;
+  border-radius:14px;
+  text-align:center;
+}
 
-    button {
-      padding:10px 16px;
-      border-radius:10px;
-      border:none;
-      background:#2c3566;
-      color:white;
-      cursor:pointer;
-      font-weight:bold;
-      margin-top:10px;
-    }
+button {
+  padding:10px 16px;
+  border:none;
+  border-radius:10px;
+  background:#2c3566;
+  color:white;
+  cursor:pointer;
+  font-weight:bold;
+}
 
-    .hud {
-      margin-top:8px;
-      font-size:13px;
-      color:white;
-      display:flex;
-      justify-content:space-between;
-    }
-  </style>
+.hud {
+  margin-top:8px;
+  font-size:13px;
+  color:white;
+  display:flex;
+  justify-content:space-between;
+}
+</style>
 </head>
 <body>
 
 <div class="wrap">
 
-  <canvas id="c" width="480" height="270"></canvas>
+<canvas id="c" width="480" height="270"></canvas>
+<audio id="bgm" src="/music.mp3" loop preload="auto"></audio>
 
-  <audio id="bgm" src="/music.mp3" loop preload="auto"></audio>
-
-  <div id="overlay" class="overlay">
-    <div class="panel">
-      <h2 style="margin:0 0 8px;">Valentine Quest 💗</h2>
-      <p>Collect the hearts and reach the prince.</p>
-      <button id="startBtn">Start</button>
-    </div>
+<div id="overlay" class="overlay">
+  <div class="panel">
+    <h2>Valentine Quest 💗</h2>
+    <p>Collect 3 hearts and reach the prince.</p>
+    <button id="startBtn">Start</button>
   </div>
+</div>
 
-  <div class="hud">
-    <div>A/D or ←/→ move • Space jump • ↓ interact</div>
-    <div id="status">Loading...</div>
-  </div>
+<div class="hud">
+  <div>A/D or ←/→ move • Space jump</div>
+  <div id="status">Loading...</div>
+</div>
 
 </div>
 
 <script>
 (() => {
 
-  const GIRLFRIEND_NAME = "Araya";
-  const YOUR_NAME = "Bruce";
-  const FINAL_LINE = `Happy Valentine's Day, ${GIRLFRIEND_NAME}. I choose you — always.`;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
 
-  const canvas = document.getElementById("c");
-  const ctx = canvas.getContext("2d");
-  ctx.imageSmoothingEnabled = false;
+const bgm = document.getElementById("bgm");
+const overlay = document.getElementById("overlay");
+const startBtn = document.getElementById("startBtn");
+const statusEl = document.getElementById("status");
 
-  const bgm = document.getElementById("bgm");
-  const overlay = document.getElementById("overlay");
-  const startBtn = document.getElementById("startBtn");
-  const statusEl = document.getElementById("status");
+const princess = new Image();
+const prince = new Image();
 
-  const princess = new Image();
-  const prince = new Image();
+princess.src = "/Princess.png";
+prince.src = "/Prince.png";
 
-  princess.src = "/Princess.png";
-  prince.src = "/Prince.png";
+let princessLoaded=false;
+let princeLoaded=false;
 
-  let princessLoaded = false;
-  let princeLoaded = false;
+princess.onload = () => princessLoaded=true;
+prince.onload = () => princeLoaded=true;
 
-  princess.onload = () => princessLoaded = true;
-  prince.onload = () => princeLoaded = true;
+startBtn.addEventListener("click", async ()=>{
+  overlay.style.display="none";
+  try{
+    bgm.volume=.6;
+    await bgm.play();
+  }catch{}
+});
 
-  const TS = 16;
-  const W = 30;
-  const H = 17;
+const TS=16;
+const W=30;
+const H=17;
 
-  const map = [
-    "000000000000000000000000000000",
-    "000000000000000000000000000000",
-    "000000000000000000000000000000",
-    "000000000000000000000000003000",
-    "000000000000000000000000011100",
-    "000000000000000200000000000000",
-    "000000000000011110000000000000",
-    "000000000000000000000003000000",
-    "000000000111100000000111100000",
-    "000000000000000000000000000000",
-    "000000030000000000200000000000",
-    "000011110000000001111000000400",
-    "000000000000000000000000001111",
-    "000000000000000000000000000000",
-    "000000000000000000000000000000",
-    "011111111111111111111111111110",
-    "111111111111111111111111111111",
-  ].map(r => r.split("").map(Number));
+const map=[
+"000000000000000000000000000000",
+"000000000000000000000000000000",
+"000000000000000000000000000000",
+"000000000000000000000000003000",
+"000000000000000000000000011100",
+"000000000000000000000000000000",
+"000000000000011110000000000000",
+"000000000000000000000003000000",
+"000000000111100000000111100000",
+"000000000000000000000000000000",
+"000000030000000000000000000000",
+"000011110000000001111000000400",
+"000000000000000000000000001111",
+"000000000000000000000000000000",
+"000000000000000000000000000000",
+"011111111111111111111111111110",
+"111111111111111111111111111111"
+].map(r=>r.split("").map(Number));
 
-  let hearts = [];
-  for (let y=0;y<H;y++)
-    for (let x=0;x<W;x++)
-      if (map[y][x]===3)
-        hearts.push({x,y,taken:false});
+let hearts=[];
+for(let y=0;y<H;y++)
+  for(let x=0;x<W;x++)
+    if(map[y][x]===3)
+      hearts.push({x,y,taken:false});
 
-  let gate = {x:0,y:0,open:false};
-  for (let y=0;y<H;y++)
-    for (let x=0;x<W;x++)
-      if (map[y][x]===4)
-        gate={x,y,open:false};
+let gate={x:0,y:0,open:false};
+for(let y=0;y<H;y++)
+  for(let x=0;x<W;x++)
+    if(map[y][x]===4)
+      gate={x,y,open:false};
 
-  const player = {
-    x: 32,
-    y: 200,
-    w: 12,
-    h: 14,
-    vx:0,
-    vy:0,
-    onGround:false
-  };
+const player={
+  x:64,
+  y:80,
+  w:12,
+  h:14,
+  vx:0,
+  vy:0,
+  onGround:false
+};
 
-  const physics = { grav:900, move:220, jump:360, friction:.85 };
-  const cam = {x:0,y:0};
+const physics={grav:900,move:220,jump:360,friction:.85};
 
-  const keys = new Set();
-  let interact = false;
+const keys=new Set();
 
-  window.addEventListener("keydown", e=>{
-    if(["ArrowLeft","ArrowRight","ArrowDown"," "].includes(e.key)) e.preventDefault();
-    keys.add(e.key);
-    if(e.key==="ArrowDown") interact=true;
-  });
+window.addEventListener("keydown",e=>{
+  if(["ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+  keys.add(e.key);
+});
+window.addEventListener("keyup",e=>keys.delete(e.key));
 
-  window.addEventListener("keyup", e=> keys.delete(e.key));
+function isSolid(t){return t===1;}
 
-  startBtn.addEventListener("click", async ()=>{
-    overlay.style.display="none";
-    try {
-      bgm.volume=0.6;
-      await bgm.play();
-    } catch {}
-  });
+function aabb(a,b,c,d,e,f,g,h){
+  return a<e+g&&a+c>e&&b<f+h&&b+d>f;
+}
 
-  function isSolid(t){ return t===1; }
+function resolve(axis){
+  const left=Math.floor(player.x/TS);
+  const right=Math.floor((player.x+player.w)/TS);
+  const top=Math.floor(player.y/TS);
+  const bottom=Math.floor((player.y+player.h)/TS);
 
-  function aabb(a,b,c,d,e,f,g,h){
-    return a<e+g && a+c>e && b<f+h && b+d>f;
-  }
+  if(axis==="y") player.onGround=false;
 
-  function resolve(axis){
-    const left=Math.floor(player.x/TS);
-    const right=Math.floor((player.x+player.w)/TS);
-    const top=Math.floor(player.y/TS);
-    const bottom=Math.floor((player.y+player.h)/TS);
-
-    if(axis==="y") player.onGround=false;
-
-    for(let y=top;y<=bottom;y++){
-      for(let x=left;x<=right;x++){
-        const t=(x<0||y<0||x>=W||y>=H)?1:map[y][x];
-        if(!isSolid(t)) continue;
-
-        const tx=x*TS, ty=y*TS;
-
-        if(aabb(player.x,player.y,player.w,player.h,tx,ty,TS,TS)){
-          if(axis==="x"){
-            if(player.vx>0) player.x=tx-player.w;
-            else if(player.vx<0) player.x=tx+TS;
-            player.vx=0;
-          }else{
-            if(player.vy>0){
-              player.y=ty-player.h;
-              player.vy=0;
-              player.onGround=true;
-            }else if(player.vy<0){
-              player.y=ty+TS;
-              player.vy=0;
-            }
+  for(let y=top;y<=bottom;y++){
+    for(let x=left;x<=right;x++){
+      const t=(x<0||y<0||x>=W||y>=H)?1:map[y][x];
+      if(!isSolid(t)) continue;
+      const tx=x*TS,ty=y*TS;
+      if(aabb(player.x,player.y,player.w,player.h,tx,ty,TS,TS)){
+        if(axis==="x"){
+          if(player.vx>0) player.x=tx-player.w;
+          else if(player.vx<0) player.x=tx+TS;
+          player.vx=0;
+        }else{
+          if(player.vy>0){
+            player.y=ty-player.h;
+            player.vy=0;
+            player.onGround=true;
+          }else if(player.vy<0){
+            player.y=ty+TS;
+            player.vy=0;
           }
         }
       }
     }
   }
+}
 
-  function update(dt){
+let finished=false;
 
-    const left=keys.has("a")||keys.has("ArrowLeft");
-    const right=keys.has("d")||keys.has("ArrowRight");
-    const jump=keys.has(" ");
+function update(dt){
 
-    if(left) player.vx=-physics.move;
-    if(right) player.vx=physics.move;
-    if(!left&&!right) player.vx*=physics.friction;
+  const left=keys.has("a")||keys.has("ArrowLeft");
+  const right=keys.has("d")||keys.has("ArrowRight");
+  const jump=keys.has(" ");
 
-    if(jump&&player.onGround){
-      player.vy=-physics.jump;
-      player.onGround=false;
-    }
+  if(left) player.vx=-physics.move;
+  if(right) player.vx=physics.move;
+  if(!left&&!right) player.vx*=physics.friction;
 
-    player.vy+=physics.grav*dt;
-
-    player.x+=player.vx*dt; resolve("x");
-    player.y+=player.vy*dt; resolve("y");
-
-    cam.x=Math.max(0,Math.min(player.x-240,W*TS-480));
-    cam.y=Math.max(0,Math.min(player.y-135,H*TS-270));
-
-    for(const h of hearts){
-      if(h.taken) continue;
-      const px=h.x*TS, py=h.y*TS;
-      if(aabb(player.x,player.y,player.w,player.h,px+3,py+3,TS-6,TS-6)){
-        h.taken=true;
-        if(hearts.every(h=>h.taken)) gate.open=true;
-      }
-    }
-
-    if(gate.open){
-      const gx=gate.x*TS, gy=gate.y*TS;
-      if(aabb(player.x,player.y,player.w,player.h,gx,gy,TS,TS)){
-        finished=true;
-      }
-    }
-
-    interact=false;
-    statusEl.textContent=`Hearts ${hearts.filter(h=>h.taken).length}/3`;
+  if(jump&&player.onGround){
+    player.vy=-physics.jump;
+    player.onGround=false;
   }
 
-  let finished=false;
+  player.vy+=physics.grav*dt;
 
-  function draw(){
-    ctx.fillStyle="#0b0f1a";
+  player.x+=player.vx*dt; resolve("x");
+  player.y+=player.vy*dt; resolve("y");
+
+  for(const h of hearts){
+    if(h.taken) continue;
+    const px=h.x*TS,py=h.y*TS;
+    if(aabb(player.x,player.y,player.w,player.h,px+3,py+3,TS-6,TS-6)){
+      h.taken=true;
+      if(hearts.every(h=>h.taken)) gate.open=true;
+    }
+  }
+
+  if(gate.open){
+    const gx=gate.x*TS,gy=gate.y*TS;
+    if(aabb(player.x,player.y,player.w,player.h,gx,gy,TS,TS))
+      finished=true;
+  }
+
+  statusEl.textContent=`Hearts ${hearts.filter(h=>h.taken).length}/3`;
+}
+
+function draw(){
+  ctx.fillStyle="#0b0f1a";
+  ctx.fillRect(0,0,480,270);
+
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      if(map[y][x]===1){
+        ctx.fillStyle="#1b2a4a";
+        ctx.fillRect(x*TS,y*TS,TS,TS);
+      }
+      if(map[y][x]===4){
+        ctx.fillStyle=gate.open?"#9de38f":"#ff9aa9";
+        ctx.fillRect(x*TS+3,y*TS+3,TS-6,TS-6);
+      }
+    }
+  }
+
+  for(const h of hearts){
+    if(h.taken) continue;
+    ctx.fillStyle="#ff5c7a";
+    ctx.fillRect(h.x*TS+6,h.y*TS+6,4,4);
+  }
+
+  if(princeLoaded){
+    ctx.drawImage(
+      prince,
+      gate.x*TS - prince.naturalWidth - 4,
+      gate.y*TS + TS - prince.naturalHeight
+    );
+  }
+
+  if(princessLoaded){
+    ctx.drawImage(
+      princess,
+      player.x - (princess.naturalWidth-player.w)/2,
+      player.y + player.h - princess.naturalHeight
+    );
+  }
+
+  if(finished){
+    ctx.fillStyle="rgba(0,0,0,.7)";
     ctx.fillRect(0,0,480,270);
-
-    for(let y=0;y<H;y++){
-      for(let x=0;x<W;x++){
-        const t=map[y][x];
-        if(t===1){
-          ctx.fillStyle="#1b2a4a";
-          ctx.fillRect(x*TS-cam.x,y*TS-cam.y,TS,TS);
-        }
-        if(t===4){
-          ctx.fillStyle=gate.open?"#9de38f":"#ff9aa9";
-          ctx.fillRect(x*TS-cam.x+3,y*TS-cam.y+3,TS-6,TS-6);
-        }
-      }
-    }
-
-    for(const h of hearts){
-      if(h.taken) continue;
-      ctx.fillStyle="#ff5c7a";
-      ctx.fillRect(h.x*TS-cam.x+6,h.y*TS-cam.y+6,4,4);
-    }
-
-    if(princeLoaded){
-      ctx.drawImage(
-        prince,
-        gate.x*TS-cam.x- prince.naturalWidth - 4,
-        gate.y*TS-cam.y + TS - prince.naturalHeight
-      );
-    }
-
-    if(princessLoaded){
-      ctx.drawImage(
-        princess,
-        player.x-cam.x - (princess.naturalWidth-player.w)/2,
-        player.y-cam.y + player.h - princess.naturalHeight
-      );
-    }
-
-    if(finished){
-      ctx.fillStyle="rgba(0,0,0,.7)";
-      ctx.fillRect(0,0,480,270);
-      ctx.fillStyle="white";
-      ctx.font="18px system-ui";
-      ctx.fillText("REUNITED 💞",150,110);
-      ctx.font="14px system-ui";
-      ctx.fillText(FINAL_LINE,40,140);
-    }
+    ctx.fillStyle="white";
+    ctx.font="18px system-ui";
+    ctx.fillText("REUNITED 💞",150,120);
   }
+}
 
-  let last=performance.now();
-  function loop(now){
-    const dt=Math.min(.033,(now-last)/1000);
-    last=now;
-    update(dt);
-    draw();
-    requestAnimationFrame(loop);
-  }
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.033,(now-last)/1000);
+  last=now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
 
-  loop();
+loop();
 
 })();
 </script>
+
 </body>
 </html>
